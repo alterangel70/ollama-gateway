@@ -53,6 +53,7 @@ class OllamaAdapter(ILLMProvider):
                 "model": request.model,
                 "prompt": request.prompt,
                 "stream": False,
+                "think": False,
                 "keep_alive": self.keep_alive,
                 "options": {
                     "temperature": request.temperature,
@@ -116,6 +117,7 @@ class OllamaAdapter(ILLMProvider):
                 "model": request.model,
                 "prompt": request.prompt,
                 "stream": True,
+                "think": False,
                 "keep_alive": self.keep_alive,
                 "options": {
                     "temperature": request.temperature,
