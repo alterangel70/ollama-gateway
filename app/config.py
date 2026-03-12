@@ -55,11 +55,11 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------------
     DEFAULT_MODEL: str = "mistral:7b"
     DEFAULT_TEMPERATURE: float = 0.1
-    DEFAULT_MAX_TOKENS: int = 4000
+    DEFAULT_MAX_TOKENS: int = 2048
     MIN_TEMPERATURE: float = 0.0
     MAX_TEMPERATURE: float = 2.0
     MIN_TOKENS: int = 1
-    MAX_TOKENS_LIMIT: int = 8192
+    MAX_TOKENS_LIMIT: int = 4096
     
     class Config:
         env_file = ".env"

@@ -14,7 +14,9 @@ services:
     # mem_limit forces ollama to read available memory from the container cgroup
     # instead of host MemFree (which excludes reclaimable buff/cache).
     # Set to ~75% of total host RAM (host has 7.8 GiB → 6g).
+    # memswap_limit allows up to 4g of swap so models can load even when RAM is tight.
     mem_limit: ${OLLAMA_MEM_LIMIT:-6g}
+    memswap_limit: ${OLLAMA_MEMSWAP_LIMIT:-10g}
     restart: unless-stopped
 
   ollama-gateway:
