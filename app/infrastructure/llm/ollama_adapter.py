@@ -2,9 +2,10 @@
 Ollama LLM adapter — implements ILLMProvider against the Ollama HTTP API.
 """
 import httpx
+import json
 import time
 import asyncio
-from typing import List, Optional
+from typing import AsyncIterator, List, Optional
 from uuid import uuid4
 from datetime import datetime
 
@@ -91,7 +92,64 @@ class OllamaAdapter(ILLMProvider):
             # Always release the lock so subsequent requests are not blocked.
             async with self._lock:
                 self._processing = False
-    
+
+    async def generate_stream(self, request: LLMRequest) -> AsyncIterator[str]:
+        """Stream text generation, yielding text tokens as they arrive from Ollama.
+
+        Uses Ollama's streaming NDJSON API (stream=True on /api/generate).
+        Raises LLMBusyError if another request is already in flight.
+        """
+        if self._processing:
+            raise LLMBusyError(
+                "LLM is currently processing another request. Please try again later."
+            )
+
+        async with self._lock:
+            if self._processing:
+                raise LLMBusyError(
+                    "LLM is currently processing another request. Please try again later."
+                )
+            self._processing = True
+
+        try:
+            payload = {
+                "model": request.model,
+                "prompt": request.prompt,
+                "stream": True,
+                "keep_alive": self.keep_alive,
+                "options": {
+                    "temperature": request.temperature,
+                    "num_predict": request.max_tokens
+                }
+            }
+
+            if request.system_prompt:
+                payload["system"] = request.system_prompt
+
+            try:
+                async with self.client.stream(
+                    "POST", f"{self.base_url}/api/generate", json=payload
+                ) as response:
+                    response.raise_for_status()
+                    async for line in response.aiter_lines():
+                        if not line:
+                            continue
+                        data = json.loads(line)
+                        token = data.get("response", "")
+                        if token:
+                            yield token
+                        if data.get("done"):
+                            break
+
+            except httpx.TimeoutException as e:
+                raise LLMTimeoutError(f"Ollama timeout: {str(e)}")
+            except httpx.HTTPError as e:
+                raise LLMConnectionError(f"Ollama connection failed: {str(e)}")
+
+        finally:
+            async with self._lock:
+                self._processing = False
+
     async def list_models(self) -> List[str]:
         """Return the names of all models currently available in Ollama."""
         try:

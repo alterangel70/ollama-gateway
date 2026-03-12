@@ -2,6 +2,8 @@
 HTTP controllers — endpoint handlers and dependency injection factories.
 """
 from fastapi import APIRouter, HTTPException, Depends
+from fastapi.responses import StreamingResponse
+import json as json_lib
 import time
 import uuid
 
@@ -179,10 +181,11 @@ async def oai_list_models(llm=Depends(get_llm_provider)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/v1/chat/completions", response_model=ChatCompletionResponse, tags=["openai-compatible"])
+@router.post("/v1/chat/completions", tags=["openai-compatible"])
 async def oai_chat_completions(
     request: ChatCompletionRequest,
-    use_case: GenerateTextUseCase = Depends(get_generate_use_case)
+    use_case: GenerateTextUseCase = Depends(get_generate_use_case),
+    llm=Depends(get_llm_provider)
 ):
     """
     Generate a chat completion in OpenAI format.
@@ -192,6 +195,10 @@ async def oai_chat_completions(
     - All `user` / `assistant` turns except the last user message are
       serialised as conversation history and prepended to the prompt.
     - The last `user` message becomes the main prompt.
+
+    When `stream=true` the response is sent as SSE (text/event-stream) using
+    OpenAI chat-chunk format.  When `stream=false` (default) a single JSON
+    object is returned.
 
     Compatible with clients built on the OpenAI SDK, LangChain, LiteLLM, etc.
     """
@@ -219,6 +226,71 @@ async def oai_chat_completions(
         prompt = f"{conversation}\nUser: {last_user_msg}"
     else:
         prompt = last_user_msg
+
+    # ------------------------------------------------------------------
+    # Streaming branch — return SSE when the client requests stream=true
+    # ------------------------------------------------------------------
+    if request.stream:
+        completion_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
+        created = int(time.time())
+        model = request.model
+
+        async def event_stream():
+            try:
+                llm_request = LLMRequest.create(
+                    prompt=prompt,
+                    model=model,
+                    temperature=request.temperature,
+                    max_tokens=request.max_tokens,
+                    system_prompt=system_prompt
+                )
+
+                # Opening chunk: send the assistant role delta first.
+                first_chunk = {
+                    "id": completion_id,
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": model,
+                    "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}]
+                }
+                yield f"data: {json_lib.dumps(first_chunk)}\n\n"
+
+                # Stream content tokens.
+                async for token in llm.generate_stream(llm_request):
+                    chunk = {
+                        "id": completion_id,
+                        "object": "chat.completion.chunk",
+                        "created": created,
+                        "model": model,
+                        "choices": [{"index": 0, "delta": {"content": token}, "finish_reason": None}]
+                    }
+                    yield f"data: {json_lib.dumps(chunk)}\n\n"
+
+                # Final chunk: empty delta + stop reason.
+                final_chunk = {
+                    "id": completion_id,
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": model,
+                    "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]
+                }
+                yield f"data: {json_lib.dumps(final_chunk)}\n\n"
+                yield "data: [DONE]\n\n"
+
+            except LLMBusyError as e:
+                error_event = {"error": {"message": str(e), "type": "server_error", "code": 503}}
+                yield f"data: {json_lib.dumps(error_event)}\n\n"
+                yield "data: [DONE]\n\n"
+            except Exception as e:
+                error_event = {"error": {"message": str(e), "type": "server_error"}}
+                yield f"data: {json_lib.dumps(error_event)}\n\n"
+                yield "data: [DONE]\n\n"
+
+        return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+    # ------------------------------------------------------------------
+    # Non-streaming branch (default)
+    # ------------------------------------------------------------------
     try:
         llm_request = LLMRequest.create(
             prompt=prompt,

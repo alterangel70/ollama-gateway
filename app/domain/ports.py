@@ -2,7 +2,7 @@
 Domain ports — abstract interfaces that infrastructure adapters must implement.
 """
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, List
+from typing import Any, AsyncIterator, Dict, Optional, List
 from .entities import LLMRequest, LLMResponse
 
 
@@ -12,6 +12,11 @@ class ILLMProvider(ABC):
     @abstractmethod
     async def generate(self, request: LLMRequest) -> LLMResponse:
         """Generate text for the given request."""
+        pass
+
+    @abstractmethod
+    async def generate_stream(self, request: LLMRequest) -> AsyncIterator[str]:
+        """Generate text token-by-token; yields each text chunk as it arrives."""
         pass
 
     @abstractmethod
