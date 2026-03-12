@@ -1,0 +1,76 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama-api-ollama
+    ports:
+      - "11435:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - ollama-network
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    # mem_limit forces ollama to read available memory from the container cgroup
+    # instead of host MemFree (which excludes reclaimable buff/cache).
+    # Set to ~75% of total host RAM (host has 7.8 GiB → 6g).
+    mem_limit: ${OLLAMA_MEM_LIMIT:-6g}
+    restart: unless-stopped
+
+  ollama-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ollama-api
+    ports:
+      - "8003:8000"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - SEQ_SERVER_URL=${SEQ_SERVER_URL:-http://host.docker.internal:5340}
+      - SEQ_API_KEY=${SEQ_API_KEY:-}
+    networks:
+      - ollama-network
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: ollama-prometheus
+    ports:
+      - "9091:9090"
+    networks:
+      - ollama-network
+    configs:
+      - source: prometheus_config
+        target: /etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=7d'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    restart: unless-stopped
+    depends_on:
+      - ollama-api
+
+networks:
+  ollama-network:
+    driver: bridge
+
+volumes:
+  ollama-data:
+
+configs:
+  prometheus_config:
+    content: |
+      global:
+        scrape_interval: 15s
+        evaluation_interval: 15s
+
+      scrape_configs:
+        - job_name: 'ollama-api'
+          static_configs:
+            - targets: ['ollama-api:8000']
+          metrics_path: '/metrics'
+          scrape_interval: 15s
