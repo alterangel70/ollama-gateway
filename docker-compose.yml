@@ -1,7 +1,7 @@
 services:
   ollama:
     image: ollama/ollama:latest
-    container_name: ollama-api-ollama
+    container_name: ollama-gateway-ollama
     ports:
       - "11435:11434"
     volumes:
@@ -17,11 +17,11 @@ services:
     mem_limit: ${OLLAMA_MEM_LIMIT:-6g}
     restart: unless-stopped
 
-  ollama-api:
+  ollama-gateway:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: ollama-api
+    container_name: ollama-gateway
     ports:
       - "8003:8000"
     environment:
@@ -52,7 +52,7 @@ services:
       - '--web.console.templates=/usr/share/prometheus/consoles'
     restart: unless-stopped
     depends_on:
-      - ollama-api
+      - ollama-gateway
 
 networks:
   ollama-network:
@@ -69,8 +69,8 @@ configs:
         evaluation_interval: 15s
 
       scrape_configs:
-        - job_name: 'ollama-api'
+        - job_name: 'ollama-gateway'
           static_configs:
-            - targets: ['ollama-api:8000']
+            - targets: ['ollama-gateway:8000']
           metrics_path: '/metrics'
           scrape_interval: 15s
