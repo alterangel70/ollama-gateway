@@ -11,6 +11,12 @@ services:
     dns:
       - 8.8.8.8
       - 8.8.4.4
+    environment:
+      # Cap the default KV cache to 32k tokens instead of the model's max (262k).
+      # At 262k the KV cache alone costs 3.5 GiB; at 32k it costs ~437 MB.
+      # Total footprint drops from 7.7 GiB → ~4.6 GiB, well within the 6g limit.
+      # 32k is more than enough for WhatsApp / openclaw conversations.
+      - OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX:-32768}
     # mem_limit forces ollama to read available memory from the container cgroup
     # instead of host MemFree (which excludes reclaimable buff/cache).
     # Set to ~75% of total host RAM (host has 7.8 GiB → 6g).
@@ -30,6 +36,11 @@ services:
       - OLLAMA_BASE_URL=http://ollama:11434
       - SEQ_SERVER_URL=${SEQ_SERVER_URL:-http://host.docker.internal:5340}
       - SEQ_API_KEY=${SEQ_API_KEY:-}
+      # Unload mistral from GPU/RAM as soon as a request finishes so that
+      # other clients (e.g. openclaw-tui calling qwen3.5:2b) can use the RAM.
+      - OLLAMA_KEEP_ALIVE=0
+      # Do NOT preload mistral at startup — it would immediately consume ~3.8 GiB.
+      - OLLAMA_PRELOAD_MODEL=false
     networks:
       - ollama-network
     depends_on:
