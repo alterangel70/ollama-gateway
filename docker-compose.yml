@@ -16,7 +16,8 @@ services:
       # At 262k the KV cache alone costs 3.5 GiB; at 32k it costs ~437 MB.
       # Total footprint drops from 7.7 GiB → ~4.6 GiB, well within the 6g limit.
       # 32k is more than enough for WhatsApp / openclaw conversations.
-      - OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX:-32768}
+      # NOTE: the server-level variable is OLLAMA_CONTEXT_LENGTH (not OLLAMA_NUM_CTX).
+      - OLLAMA_CONTEXT_LENGTH=${OLLAMA_CONTEXT_LENGTH:-32768}
     # mem_limit forces ollama to read available memory from the container cgroup
     # instead of host MemFree (which excludes reclaimable buff/cache).
     # Set to ~75% of total host RAM (host has 7.8 GiB → 6g).
