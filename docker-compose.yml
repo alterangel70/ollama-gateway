@@ -12,12 +12,15 @@ services:
       - 8.8.8.8
       - 8.8.4.4
     environment:
-      # Cap the default KV cache to 32k tokens instead of the model's max (262k).
-      # At 262k the KV cache alone costs 3.5 GiB; at 32k it costs ~437 MB.
-      # Total footprint drops from 7.7 GiB → ~4.6 GiB, well within the 6g limit.
-      # 32k is more than enough for WhatsApp / openclaw conversations.
-      # NOTE: the server-level variable is OLLAMA_CONTEXT_LENGTH (not OLLAMA_NUM_CTX).
+      # OLLAMA_CONTEXT_LENGTH caps the server default, but clients like openclaw
+      # can still override it by sending num_ctx=262144 explicitly in the request.
       - OLLAMA_CONTEXT_LENGTH=${OLLAMA_CONTEXT_LENGTH:-32768}
+      # Flash attention is required to enable KV cache quantization.
+      - OLLAMA_FLASH_ATTENTION=true
+      # Quantize the KV cache to Q4. This cuts KV memory from 3.5 GiB → ~875 MB
+      # regardless of what context size the client requests (even 262k).
+      # Final footprint: weights 3.0 + KV 0.875 + compute 1.2 = ~5.1 GiB → fits in 6g.
+      - OLLAMA_KV_CACHE_TYPE=q4_0
     # mem_limit forces ollama to read available memory from the container cgroup
     # instead of host MemFree (which excludes reclaimable buff/cache).
     # Set to ~75% of total host RAM (host has 7.8 GiB → 6g).
